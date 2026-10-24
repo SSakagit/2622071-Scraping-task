@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 import csv
 import time
 
@@ -11,6 +12,7 @@ header = {
 
 res = requests.get(url)
 res.encoding = 'utf-8'
+base_url = res.url
 
 #HTMLのソースコードをBeautifulSoupオブジェクトに変換する処理
 
@@ -24,35 +26,51 @@ value = []
 #aタグを取得してから、for文でurlだけ抜き取る
 url_list = html_soup.find_all("a")
 for url_l in url_list:
-    try:
-        time.sleep(1)
-        url_li = url_l.get("href")
-        if url_li:
-            key.append(url_li)#新しく取得するごとに追加していく
-        print("URL実行中")
-    except KeyboardInterrupt:
-        print("\nプログラムが中断されました")
+    url_li = url_l.get("href")
+    if not url_li:
+            continue
+    #不要な特殊リンクの除外
+    if (
+      url_li.startswith('mailto:')
+      or url_li.startswith('#')
+      or url_li.startswith('javascript:')
+      or url_li.startswith('tel:')
+  ):
+        continue
+    #相対URLを絶対URLに変換
+    full_url = urljoin(base_url, url_li).split('#')[0]
+    #大学のサイトのみ重複なしで追加
+    if (
+      'musashino-u.ac.jp' in full_url
+      and full_url.startswith('http')
+      and full_url not in key
+  ):
+        key.append(full_url)
+print(f'取得したURL{len(key)}件')
+
 
 #タイトルタグだけ抜き取る
-ti_all = html_soup.find_all('title')
 for taget_url in key:
-    if not taget_url.startswith('http'):
-        continue
-    try:
-        ta_url = requests.get(url)
-        time.sleep(1)
-        soup = BeautifulSoup(ta_url.content, 'html.parser')
-        title_tag = soup.find('title')
-        if title_tag:
-            title = title_tag.text
-            value.append(title)
-            mu_Dict[url] = title
-        print("タイトル実行中")
-    except KeyboardInterrupt:
-            print("\nプログラムが中断されました")
-    except Exception as e:
-        print("スキップします")
+  try:
+    time.sleep(1) 
+    ta_url = requests.get(taget_url, headers=header, timeout=5)
+    ta_url.encoding = ta_url.apparent_encoding
+    soup = BeautifulSoup(ta_url.content, 'html.parser')
+    title_tag = soup.find('title')
+    #タイトルの空欄を削除する、空欄の場合はタイトルなし
+    if title_tag and title_tag.text.strip():
+      title = title_tag.text.strip()
+    else:
+      title = 'タイトルなし'
+    mu_Dict[taget_url] = title#taget_urlを文字列にして保存
+    print(f'成功: {title} ({taget_url})')
+  except KeyboardInterrupt:
+    print('\nプログラムが中断されました')
+    break
+  except Exception as e:
+    print(f'スキップ ({taget_url}): {e}')
 
+print(f'辞書に保存された総件数: {len(mu_Dict)}件')
 
 
 # CSVファイルに保存
@@ -61,7 +79,7 @@ with open('musashino.csv','w', newline="",encoding="utf-8") as f:
     writer = csv.DictWriter(f,fieldnames=fieldnames)
     writer.writeheader()
     for u, t in mu_Dict.items():
-        writer.writerow({'URl':u,'Title':t})
-        
+        writer.writerow({'URL':u,'Title':t})
+print('csv保存が完了しました!')        
 
 
